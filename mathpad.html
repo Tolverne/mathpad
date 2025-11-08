@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STEMPad‑lite (single file)</title>
+  <style>
+    :root{
+      --bg:#0f172a; /* slate-900 */
+      --panel:#111827ee; /* gray-900 */
+      --card:#0b1222; /* custom dark */
+      --muted:#94a3b8; /* slate-400 */
+      --text:#e5e7eb; /* gray-200 */
+      --accent:#38bdf8; /* sky-400 */
+      --good:#10b981; /* emerald-500 */
+      --warn:#f59e0b; /* amber-500 */
+      --bad:#ef4444; /* red-500 */
+      --border:#1f2937; /* gray-800 */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(135deg,#0b1020,#0f172a);font:14px/1.5 system-ui,Segoe UI,Roboto,Inter,Helvetica,Arial;color:var(--text)}
+    header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#0f172a,#0f172ad9 60%,#0f172a00);backdrop-filter: blur(8px);}
+    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    .title{display:flex;gap:12px;align-items:center}
+    .title h1{margin:0;font-weight:700;font-size:20px}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    button, .btn{background:#0b1326;border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:12px;cursor:pointer}
+    button:hover{border-color:#2a3b55}
+    button.primary{background:linear-gradient(180deg,#0ea5e9,#0284c7);border:none;color:white}
+    .pill{padding:8px 10px;border-radius:999px;border:1px solid var(--border);background:#0a1324;color:var(--muted)}
+
+    main{max-width:1100px;margin:0 auto;padding:18px;display:grid;gap:14px}
+    .card{background:radial-gradient(1200px 400px at 20% -10%, #0b1a36, transparent 60%),
+           linear-gradient(180deg,#0b1222,#0b1222e0 60%,#0b122200);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+    .card header{display:flex;justify-content:space-between;align-items:center;background: #0c162c;padding:12px 16px;border-bottom:1px solid var(--border)}
+    .card header h3{margin:0;font-size:14px;font-weight:600;color:#cbd5e1}
+    .card header .actions{display:flex;gap:8px}
+    .card .body{padding:14px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .row > *{flex:1}
+    textarea,input,select{width:100%;background:#0a1222;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px}
+    textarea{min-height:92px;resize:vertical}
+    canvas{background:#0a0f1e;border:1px solid var(--border);border-radius:10px;max-width:100%}
+    .output{background:#050a16;border:1px dashed #20314f;color:#d1d5db;border-radius:10px;padding:10px;white-space:pre-wrap;overflow:auto}
+    .grid{width:100%;border-collapse:collapse}
+    .grid th,.grid td{border:1px solid #1f2c45;padding:6px;text-align:center}
+    .grid td[contenteditable="true"]{background:#0a152b;min-width:60px}
+    .hint{color:var(--muted);font-size:12px}
+    .badge{border:1px solid #204062;background:#0b1f3a;color:#b6e1ff;padding:2px 8px;border-radius:999px;font-size:11px}
+    .kbd{border:1px solid #3b4861;border-bottom-width:2px;border-radius:6px;padding:2px 6px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;background:#0a1428;color:#c7d2fe}
+    .footer{opacity:.7;text-align:center;padding:24px}
+    .inline-help{font-size:12px;color:#9ca3af}
+  </style>
+  <!-- MathJax (LaTeX) -->
+  <script>
+    window.MathJax = { tex: { inlineMath: [["$","$"],["\\(","\\)"]], displayMath: [["$$","$$"],["\\[","\\]"]] }, svg: { fontCache: 'global' } };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  <!-- Pyodide for Python blocks -->
+  <script defer src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="title">
+        <span class="badge">alpha</span>
+        <h1>STEMPad‑lite</h1>
+        <span class="pill">Single file • math • graph • Python • sheet</span>
+      </div>
+      <div class="toolbar">
+        <button id="addMath">➕ Math</button>
+        <button id="addGraph">➕ Graph</button>
+        <button id="addPy">➕ Python</button>
+        <button id="addSheet">➕ Sheet</button>
+        <span class="inline-help">Tip: press <span class="kbd">Ctrl</span>/<span class="kbd">⌘</span> + <span class="kbd">Enter</span> to run in focused block</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="stage"></main>
+
+  <div class="footer">
+    Built for teaching demos: no tracking, all local in your browser. Save this page as a file to keep your work.
+  </div>
+
+<script>
+// --- Utilities ---
+const stage = document.getElementById('stage');
+const el = (tag, cls, html) => { const x = document.createElement(tag); if(cls) x.className = cls; if(html!=null) x.innerHTML = html; return x; };
+let blockId = 0;
+function card(title){
+  const id = `b${++blockId}`;
+  const c = el('div','card');
+  const h = el('header','');
+  h.append(el('h3','',title));
+  const actions = el('div','actions');
+  const del = el('button','', '🗑️');
+  del.title = 'Delete block';
+  del.onclick = ()=> c.remove();
+  actions.append(del);
+  h.append(actions);
+  c.append(h);
+  const body = el('div','body');
+  c.append(body);
+  c.dataset.blockId = id;
+  stage.append(c);
+  return {card:c, body};
+}
+
+// Keyboard run helper
+document.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key === 'Enter'){
+    const b = e.target.closest('.card');
+    if(!b) return;
+    b.querySelector('.run')?.click();
+  }
+});
+
+// --- Math Block ---
+function addMath(){
+  const {card: c, body} = card('Math (LaTeX)');
+  const ta = el('textarea');
+  ta.placeholder = 'Type LaTeX here, e.g. \\int_0^1 x^2\\,dx = \\tfrac{1}{3}';
+  const renderBtn = el('button','run primary','Render');
+  const out = el('div','output');
+  const hint = el('div','hint','Inline $a^2+b^2=c^2$ or display with $$y=\\sin x$$');
+  renderBtn.onclick = async ()=>{
+    out.innerHTML = ta.value;
+    if(window.MathJax) await MathJax.typesetPromise([out]);
+  };
+  body.append(ta, el('div','row', renderBtn), out, hint);
+}
+
+// --- Tiny Function Parser & Plotter ---
+function makeScope(){
+  // Expose selected Math.* safely
+  const S = { sin:Math.sin, cos:Math.cos, tan:Math.tan, asin:Math.asin, acos:Math.acos, atan:Math.atan,
+    log:Math.log, exp:Math.exp, sqrt:Math.sqrt, abs:Math.abs, pow:Math.pow, min:Math.min, max:Math.max,
+    PI:Math.PI, E:Math.E, sign:Math.sign, floor:Math.floor, ceil:Math.ceil, round:Math.round };
+  return S;
+}
+function compileExpr(expr){
+  // Very small sandbox: only allow characters we expect and functions in scope
+  if(!/^[-+*/^()%., x0-9a-z_\s]*$/i.test(expr)) throw new Error('Invalid characters in expression');
+  const scope = makeScope();
+  const keys = Object.keys(scope).join(',');
+  // Replace ^ with ** for JS exponent
+  const js = expr.replaceAll('^','**');
+  // eslint-disable-next-line no-new-func
+  const fn = new Function('x', `{ const {${keys}} = this; return (${js}); }`).bind(scope);
+  // Test once
+  fn(0);
+  return fn;
+}
+function plot(canvas, f, xMin, xMax){
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+  // draw background
+  ctx.fillStyle = '#071025'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle = '#1f2f53'; ctx.lineWidth = 1;
+  ctx.beginPath(); // grid
+  for(let gx=0; gx<=W; gx+=50){ ctx.moveTo(gx,0); ctx.lineTo(gx,H);} 
+  for(let gy=0; gy<=H; gy+=50){ ctx.moveTo(0,gy); ctx.lineTo(W,gy);} 
+  ctx.stroke();
+  // axes
+  const x2px = x => (x - xMin) / (xMax - xMin) * W;
+  const yMin=-5, yMax=5; // auto-range could be added later
+  const y2px = y => H - (y - yMin) / (yMax - yMin) * H;
+  ctx.strokeStyle = '#4b5563';
+  ctx.beginPath(); ctx.moveTo(0, y2px(0)); ctx.lineTo(W, y2px(0)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2px(0), 0); ctx.lineTo(x2px(0), H); ctx.stroke();
+  // plot function
+  ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  const N = W; // sample per pixel
+  let first=true;
+  for(let i=0;i<=N;i++){
+    const x = xMin + (xMax - xMin) * (i/N);
+    let y = f(x);
+    if(!isFinite(y)) { first=true; continue; }
+    const px = x2px(x), py = y2px(y);
+    if(first){ ctx.moveTo(px,py); first=false; } else { ctx.lineTo(px,py);} 
+  }
+  ctx.stroke();
+}
+
+function addGraph(){
+  const {body} = card('Graph (mini‑Desmos)');
+  const fx = el('input'); fx.placeholder = 'f(x) = sin(x) + x/5';
+  const xMin = el('input'); xMin.value = '-10';
+  const xMax = el('input'); xMax.value = '10';
+  const run = el('button','run primary','Plot');
+  const status = el('div','hint','Allowed: + - * / ^ (), sin cos tan log exp sqrt abs min max, constants PI E');
+  const cnv = el('canvas'); cnv.width = 700; cnv.height = 360;
+  run.onclick = ()=>{
+    try{
+      const expr = fx.value.replace(/^\s*f\s*\(\s*x\s*\)\s*=\s*/i,'');
+      const f = compileExpr(expr);
+      plot(cnv, f, parseFloat(xMin.value), parseFloat(xMax.value));
+      status.textContent = 'OK'; status.style.color = 'var(--good)';
+    }catch(e){ status.textContent = 'Error: '+e.message; status.style.color = 'var(--bad)'; }
+  };
+  body.append(el('div','row', fx), el('div','row', xMin, xMax, run), cnv, status);
+}
+
+// --- Python via Pyodide ---
+let pyReadyPromise = null;
+async function ensurePy(){
+  if(pyReadyPromise) return pyReadyPromise;
+  pyReadyPromise = new Promise(async (res, rej)=>{
+    try{
+      window.pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.1/full/" });
+      // Preload matplotlib (lightweight use)
+      await pyodide.loadPackage(['matplotlib', 'numpy']);
+      // Install a helper that captures matplotlib figures to base64
+      const helper = `\nimport io, base64\nimport matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\n\n__images__ = []\n\nclass __Cap:\n    def show(self):\n        buf = io.BytesIO()\n        plt.savefig(buf, format='png', dpi=140, bbox_inches='tight')\n        buf.seek(0)\n        b64 = base64.b64encode(buf.read()).decode('ascii')\n        __images__.append(b64)\n        plt.close()\n\nshow = __Cap().show\n`;
+      pyodide.runPython(helper);
+      res();
+    }catch(err){ rej(err); }
+  });
+  return pyReadyPromise;
+}
+function addPython(){
+  const {body} = card('Python (Pyodide + Matplotlib)');
+  const ta = el('textarea');
+  ta.value = `# Example: plot a sine wave\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nx = np.linspace(0, 6*np.pi, 600)\ny = np.sin(x)\n\nplt.plot(x, y)\nplt.title('Sine wave')\nshow()  # captures the current figure`;
+  const run = el('button','run primary','Run (Shift clears)');
+  const out = el('div','output');
+  const hint = el('div','hint','Use print(...) for text; call show() to capture a matplotlib figure.');
+  let lastWasShift = false;
+  run.onclick = async (ev)=>{
+    if(ev.shiftKey){ out.textContent=''; out.innerHTML=''; return; }
+    out.textContent = 'Preparing Python...';
+    try{
+      await ensurePy();
+      pyodide.runPython('__images__.clear()');
+      // Capture stdout
+      let stdout = '';
+      const oldWrite = pyodide._module.print;
+      pyodide._module.print = (s)=>{ stdout += s + "\n"; };
+      try{
+        pyodide.runPython(ta.value);
+      } finally {
+        pyodide._module.print = oldWrite;
+      }
+      const imgs = pyodide.runPython('__images__');
+      out.textContent = stdout.trim();
+      if(imgs && imgs.length){
+        out.textContent = out.textContent ? (out.textContent + "\n\n") : '';
+        imgs.forEach(b64=>{
+          const img = new Image(); img.src = 'data:image/png;base64,'+b64; img.style.maxWidth='100%'; img.style.display='block'; img.style.margin='6px 0';
+          out.append(img);
+        });
+      }
+      if(!out.textContent && !imgs.length) out.textContent = '(no output)';
+    }catch(e){ out.textContent = 'Error: '+e.message; }
+  };
+  body.append(ta, el('div','row', run), out, hint);
+}
+
+// --- Simple Sheet ---
+const COLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').slice(0,10);
+function addSheet(){
+  const {body} = card('Sheet (formulas + chart)');
+  const table = el('table','grid');
+  const thead = el('thead'); const trh = el('tr'); trh.append(el('th','', '')); COLS.forEach(c=>trh.append(el('th','',c))); thead.append(trh);
+  const tbody = el('tbody');
+  for(let r=1;r<=12;r++){
+    const tr = el('tr'); tr.append(el('th','',r));
+    for(let c=0;c<COLS.length;c++){
+      const td = el('td'); td.contentEditable = 'true'; td.dataset.addr = COLS[c]+r; tr.append(td);
+    }
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  const info = el('div','hint','Enter values or formulas (e.g. =A1+B1 or =SUM(A1:A5)). Select a range (A1:A5) to chart.');
+  const range = el('input'); range.placeholder = 'Range (e.g. A1:A5 or A1:B5)';
+  const chartType = el('select'); chartType.innerHTML = '<option value="line">Line</option><option value="bar">Bar</option>';
+  const plotBtn = el('button','primary run','Plot');
+  const cnv = el('canvas'); cnv.width = 700; cnv.height = 320;
+
+  function cellAt(addr){ const td = table.querySelector(`[data-addr="${addr}"]`); return td; }
+  function parseAddr(addr){ const m = addr.match(/^([A-Z]+)(\d+)$/); if(!m) return null; return {col:m[1], row:parseInt(m[2],10)}; }
+  function addrRange(rng){
+    const m = rng.match(/^([A-Z]+\d+):([A-Z]+\d+)$/); if(!m) return null;
+    const a = parseAddr(m[1]), b = parseAddr(m[2]);
+    const cols = COLS.slice(Math.min(COLS.indexOf(a.col), COLS.indexOf(b.col)), Math.max(COLS.indexOf(a.col), COLS.indexOf(b.col))+1);
+    const rows = []; const [ra, rb] = [a.row, b.row].sort((x,y)=>x-y); for(let r=ra;r<=rb;r++) rows.push(r);
+    const list = [];
+    for(const c of cols){ for(const r of rows){ list.push(c+String(r)); } }
+    return list;
+  }
+  function sumAddrs(list){
+    return list.reduce((acc,addr)=>{ const td = cellAt(addr); const v = evalCell(td); return acc + (Number(v)||0); },0);
+  }
+  function evalCell(td){
+    const raw = td.textContent.trim();
+    if(!raw.startsWith('=')) return raw;
+    // formulas: =A1+B1, =SUM(A1:A5)
+    const expr = raw.slice(1).toUpperCase();
+    if(expr.startsWith('SUM(')){
+      const inside = expr.slice(4, -1);
+      const list = addrRange(inside) || [];
+      return sumAddrs(list);
+    }
+    // Replace addresses with values
+    const replaced = expr.replace(/[A-Z]+\d+/g, (m)=>{
+      const td2 = cellAt(m); const v = evalCell(td2); return (Number(v)||0); });
+    try { return Function('return '+replaced)(); } catch { return NaN; }
+  }
+  function recalcAll(){
+    tbody.querySelectorAll('td').forEach(td=>{ td.dataset.val = evalCell(td); });
+  }
+  tbody.addEventListener('input', ()=>{ recalcAll(); });
+
+  function plotSheet(){
+    recalcAll();
+    const ctx = cnv.getContext('2d');
+    ctx.clearRect(0,0,cnv.width,cnv.height);
+    ctx.fillStyle = '#071025'; ctx.fillRect(0,0,cnv.width,cnv.height);
+    const rng = range.value.toUpperCase();
+    const list = addrRange(rng) || [];
+    const values = list.map(a=> Number(cellAt(a)?.dataset.val || cellAt(a)?.textContent || 0));
+    const labels = list;
+    // axes
+    const W=cnv.width,H=cnv.height; const pad=40; const max = Math.max(1, ...values);
+    const x2 = i => pad + i*(W-2*pad)/Math.max(1,values.length-1);
+    const y2 = v => H-pad - (v/max)*(H-2*pad);
+    const gridN=5; const gctx = ctx; gctx.strokeStyle='#1f2f53'; gctx.lineWidth=1; gctx.beginPath();
+    for(let k=0;k<=gridN;k++){ const y=pad+k*(H-2*pad)/gridN; gctx.moveTo(pad,y); gctx.lineTo(W-pad,y);} gctx.stroke();
+    // draw
+    if(chartType.value==='line'){
+      ctx.strokeStyle = '#38bdf8'; ctx.lineWidth=2; ctx.beginPath();
+      values.forEach((v,i)=>{ const x=x2(i), y=y2(v); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+      ctx.stroke();
+    } else { // bar
+      const bw = (W-2*pad)/values.length*0.7;
+      ctx.fillStyle = '#22d3ee';
+      values.forEach((v,i)=>{ const x=x2(i)-bw/2, y=y2(v); const h=H-pad - y; ctx.fillRect(x,y,bw,h); });
+    }
+    // axes lines
+    ctx.strokeStyle='#4b5563'; ctx.beginPath(); ctx.moveTo(pad,pad); ctx.lineTo(pad,H-pad); ctx.lineTo(W-pad,H-pad); ctx.stroke();
+  }
+
+  plotBtn.onclick = plotSheet;
+  body.append(table, info, el('div','row', range, chartType, plotBtn), cnv);
+}
+
+// --- Hook up toolbar ---
+addMath(); addGraph(); addPython(); addSheet();
+
+document.getElementById('addMath').onclick = addMath;
+  document.getElementById('addGraph').onclick = addGraph;
+  document.getElementById('addPy').onclick = addPython;
+  document.getElementById('addSheet').onclick = addSheet;
+</script>
+</body>
+</html>
